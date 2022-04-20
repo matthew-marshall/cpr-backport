@@ -1,7 +1,6 @@
-cmake_minimum_required(VERSION 3.15)
+cmake_minimum_required(VERSION 3.10)
 project(cpr VERSION 1.7.2 LANGUAGES CXX)
 
-math(EXPR cpr_VERSION_NUM "${cpr_VERSION_MAJOR} * 0x10000 + ${cpr_VERSION_MINOR} * 0x100 + ${cpr_VERSION_PATCH}" OUTPUT_FORMAT HEXADECIMAL)
 configure_file("${cpr_SOURCE_DIR}/cmake/cprver.h.in" "${cpr_BINARY_DIR}/cpr_generated_includes/cpr/cprver.h")
 
 # Only change the folder behaviour if cpr is not a subproject
@@ -49,7 +48,6 @@ cpr_option(CPR_BUILD_TESTS_SSL "Set to ON to build cpr ssl tests" ${CPR_BUILD_TE
 message(STATUS "=======================================================")
 
 include(GNUInstallDirs)
-include(FetchContent)
 include(cmake/code_coverage.cmake)
 include(cmake/sanitizer.cmake)
 include(cmake/clear_variable.cmake)
@@ -141,94 +139,6 @@ else ()
     endforeach()
 endif()
 
-# Curl configuration
-if(CPR_FORCE_USE_SYSTEM_CURL)
-    if(CPR_ENABLE_SSL)
-        find_package(CURL COMPONENTS HTTP HTTPS)
-        if(CURL_FOUND)
-            message(STATUS "Curl ${CURL_VERSION_STRING} found on this system.")
-            # To be able to load certificates under Windows when using OpenSSL:
-            if(CMAKE_USE_OPENSSL AND WIN32 AND (NOT (CURL_VERSION_STRING VERSION_GREATER_EQUAL "7.71.0")))
-                message(FATAL_ERROR "Your system curl version (${CURL_VERSION_STRING}) is too old to support OpenSSL on Windows which requires curl >= 7.71.0. Update your curl version, use WinSSL, disable SSL or use the build in version of curl.")
-            endif()
-        else()
-            find_package(CURL COMPONENTS HTTP)
-            if(CURL_FOUND)
-                message(FATAL_ERROR "Curl found on this system but WITHOUT HTTPS/SSL support. Either disable SSL by setting CPR_ENABLE_SSL to OFF or use the build in version of curl by setting CPR_FORCE_USE_SYSTEM_CURL to OFF.")
-            else()
-                message(FATAL_ERROR "Curl not found on this system. To use the build in version set CPR_FORCE_USE_SYSTEM_CURL to OFF.")
-            endif()
-        endif()
-    else()
-        find_package(CURL COMPONENTS HTTP)
-        if(CURL_FOUND)
-            message(STATUS "Curl found on this system.")
-        else()
-            message(FATAL_ERROR "Curl not found on this system. To use the build in version set CPR_FORCE_USE_SYSTEM_CURL to OFF.")
-        endif()
-    endif()
-else()
-    message(STATUS "Configuring build in curl...")
-
-    # ZLIB is optional for curl
-    # to disable it:
-    # * from command line:
-    #     -DCURL_ZLIB=OFF
-    # * from CMake script:
-    #     SET(CURL_ZLIB OFF CACHE STRING "" FORCE)
-    if (CURL_ZLIB OR CURL_ZLIB STREQUAL AUTO OR NOT DEFINED CACHE{CURL_ZLIB})
-        include(cmake/zlib_external.cmake)
-    endif()
-
-    # We only need HTTP (and HTTPS) support:
-    set(HTTP_ONLY ON CACHE INTERNAL "" FORCE)
-    set(BUILD_CURL_EXE OFF CACHE INTERNAL "" FORCE)
-    set(BUILD_TESTING OFF)
-
-    if (CPR_ENABLE_SSL)
-        set(SSL_ENABLED ON CACHE INTERNAL "" FORCE)
-        set(CURL_CA_PATH "auto" CACHE INTERNAL "")
-        set(CURL_CA_BUNDLE "auto" CACHE INTERNAL "")
-
-        if(SSL_BACKEND_USED STREQUAL "WinSSL")
-            set(CMAKE_USE_SCHANNEL ON CACHE INTERNAL "" FORCE)
-        endif()
-
-        if(SSL_BACKEND_USED STREQUAL "OpenSSL")
-            set(CMAKE_USE_OPENSSL ON CACHE INTERNAL "" FORCE)
-        endif()
-
-        if(SSL_BACKEND_USED STREQUAL "DarwinSSL")
-            set(CMAKE_USE_SECTRANSP ON CACHE INTERNAL "" FORCE)
-        endif()
-
-        message(STATUS "Enabled curl SSL")
-    else()
-        set(SSL_ENABLED OFF CACHE INTERNAL "" FORCE)
-        set(CURL_CA_PATH "none" CACHE INTERNAL "" FORCE)
-        set(CMAKE_USE_SCHANNEL OFF CACHE INTERNAL "" FORCE)
-        set(CMAKE_USE_OPENSSL OFF CACHE INTERNAL "" FORCE)
-        set(CMAKE_USE_SECTRANSP OFF CACHE INTERNAL "" FORCE)
-        message(STATUS "Disabled curl SSL")
-    endif()
-    # Disable linting for curl
-    clear_variable(DESTINATION CMAKE_CXX_CLANG_TIDY BACKUP CMAKE_CXX_CLANG_TIDY_BKP)
-
-    FetchContent_Declare(curl
-                         URL                    https://github.com/curl/curl/releases/download/curl-7_79_1/curl-7.79.1.tar.xz
-                         URL_HASH               SHA256=0606f74b1182ab732a17c11613cbbaf7084f2e6cca432642d0e3ad7c224c3689 # the file hash for curl-7.79.1.tar.xz
-                         USES_TERMINAL_DOWNLOAD TRUE)   # <---- This is needed only for Ninja to show download progress
-    FetchContent_MakeAvailable(curl)
-
-    restore_variable(DESTINATION CMAKE_CXX_CLANG_TIDY BACKUP CMAKE_CXX_CLANG_TIDY_BKP)
-
-    # Group under the "external" project folder in IDEs such as Visual Studio.
-    if(BUILD_CURL_EXE)
-        set_property(TARGET curl PROPERTY FOLDER "external")
-    endif()
-        
-    set_property(TARGET libcurl PROPERTY FOLDER "external")
-endif()
 
 # GTest configuration
 if(CPR_BUILD_TESTS)
